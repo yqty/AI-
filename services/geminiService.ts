@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { VIRAL_FORGE_AI_PROMPT } from '../constants';
+import type { AnalyzedTopic } from "../types";
 
 if (!process.env.API_KEY) {
   throw new Error("API_KEY environment variable is not set");
@@ -19,43 +20,46 @@ async function searchTopicByCategory(prompt: string): Promise<string> {
         return response.text.trim();
     } catch (error) {
         console.error(`Error fetching topic for prompt:`, error);
-        // Return empty string on failure for a specific category so Promise.all doesn't fail
         return ""; 
     }
 }
 
-
-export async function fetchTrendingTopics(updateLoadingMessage: (message: string) => void): Promise<string> {
+export async function fetchTrendingTopics(updateLoadingMessage: (message: string) => void): Promise<AnalyzedTopic[]> {
     try {
         const categories = [
-            { name: "搞笑", prompt: "使用中文，从推特/X、YouTube或主要新闻媒体中，找出一个近期最热门、最具病毒式传播潜力的搞笑或趣闻轶事。请提供一个简短的一句话摘要，并确保它有明确的喜剧或荒谬元素。" },
-            { name: "情感", prompt: "使用中文，从推特/X、YouTube或主要新闻媒体中，找出一个近期最热门、最感人或温暖人心的情感故事。请提供一个简短的一句话摘要，并确保它能引发共鸣或触动人心。" },
-            { name: "励志", prompt: "使用中文，从推特/X、YouTube或主要新闻媒体中，找出一个近期最热门的、关于克服困难、励志或展现坚韧精神的故事。请提供一个简短的一句话摘要，并确保它具有逆袭或鼓舞人心的核心。" }
+            { id: "funny", name: "搞笑", prompt: "使用中文，在全球范围内的推特/X、YouTube或TikTok上，找出一个近期最热门、最具病毒式传播潜力的搞笑或趣闻轶事。请提供一个简短的一句话摘要。" },
+            { id: "emotional", name: "情感", prompt: "使用中文，在全球范围内的推特/X、YouTube或TikTok上，找出一个近期最热门、最能引发情感共鸣的感人故事。请提供一个简短的一句话摘要。" },
+            { id: "inspirational", name: "励志", prompt: "使用中文，在全球范围内的推特/X、YouTube或TikTok上，找出一个近期最热门的、关于克服困难或励志逆袭的真实故事。请提供一个简短的一句话摘要。" }
         ];
 
         const topicPromises = categories.map(async (category) => {
-            updateLoadingMessage(`正在搜索${category.name}类热点...`);
-            const topic = await searchTopicByCategory(category.prompt);
-            // Give context to the next model
-            return topic ? `[${category.name}类热点] ${topic}` : null;
+            updateLoadingMessage(`正在搜索全球${category.name}类热点...`);
+            const topicText = await searchTopicByCategory(category.prompt);
+            if (topicText) {
+                return {
+                    id: category.id,
+                    category: category.name,
+                    text: topicText
+                };
+            }
+            return null;
         });
 
         const topics = await Promise.all(topicPromises);
-        
-        const combinedTopics = topics.filter(topic => topic).join('\n');
+        const validTopics = topics.filter((topic): topic is AnalyzedTopic => topic !== null);
 
-        if (!combinedTopics) {
+        if (validTopics.length === 0) {
             throw new Error("未能从任何类别中找到热门话题。请检查网络连接或稍后重试。");
         }
 
-        return combinedTopics;
+        return validTopics;
 
     } catch (error) {
         console.error("Error fetching trending topics:", error);
         if (error instanceof Error) {
             throw error;
         }
-        throw new Error("无法获取热门话题。请稍后再试。");
+        throw new Error("无法获取全球热门话题。请稍后再试。");
     }
 }
 

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import type { ViralScript } from '../types';
 
@@ -28,7 +27,7 @@ const ScriptCard: React.FC<ScriptCardProps> = ({ script }) => {
           <div className="border-t border-gray-700 my-4"></div>
 
           <div>
-            <h4 className="font-semibold text-gray-200 text-lg mb-2">脚本大纲:</h4>
+            <h4 className="font-semibold text-gray-200 text-lg mb-2">视觉大纲:</h4>
             <p className="text-gray-300 whitespace-pre-wrap leading-relaxed">{script.scriptOutline.trim()}</p>
           </div>
         </div>

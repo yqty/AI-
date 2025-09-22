@@ -1,41 +1,43 @@
 import React, { useState, useCallback } from 'react';
-import type { ViralScript } from './types';
+import type { ViralScript, AnalyzedTopic } from './types';
 import { fetchTrendingTopics, generateScriptsFromTopics } from './services/geminiService';
 import Header from './components/Header';
 import LoadingSpinner from './components/LoadingSpinner';
 import ScriptCard from './components/ScriptCard';
+import TopicSelector from './components/TopicSelector';
+
+type AppStatus = 'idle' | 'fetchingTopics' | 'topicsReady' | 'generatingScripts' | 'scriptsReady' | 'error';
 
 const RocketIcon: React.FC<{className?: string}> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM12.5 18H11v-6l-2.29 2.29L7.29 12.87 12 8.16l4.71 4.71-1.42 1.42L13 12v6h-.5z" transform="rotate(-45 12 12)"/>
-        <path d="M5.47 18.53c.89-1.95 2.5-3.66 4.45-4.55l.8-.36.36-.8C12.04 10.97 13.75 9.36 15.7 8.47c1.95-.89 4.1-.48 5.66 1.07l-1.42 1.42c-1.1-1.1-2.73-1.37-4.22-.84-.99.35-1.89.96-2.61 1.77l-.36.36.8.36c1.89.85 3.51 2.47 4.39 4.37l-1.42 1.42c-1.12-2.12-3.11-3.74-5.46-4.31v.01l-1.63-.73-.73-1.63v.01c-.57-2.35-2.19-4.34-4.31-5.46l1.42-1.42c2.12 1.12 3.74 3.11 4.31 5.46h-.01l1.63.73.73 1.63h-.01c2.35.57 4.34 2.19 5.46 4.31l-1.42 1.42c-.53-1.49-1.14-2.89-2.21-4.09l-.16-.18c-1.29-1.43-3.1-2.31-5.06-2.31-1.96 0-3.77.88-5.06 2.31l-.16.18c-1.07 1.2-1.68 2.6-2.21 4.09L5.47 18.53z"/>
+         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+         <path d="M15.5 12c0-1.09-.43-2.09-1.14-2.83l-1.42-1.42c-.2-.2-.51-.2-.71 0l-4.24 4.24c-.2.2-.2.51 0 .71l1.42 1.42C10.41 15.07 11.41 15.5 12.5 15.5s2.09-.43 2.83-1.14l1.42-1.42c.2-.2.2-.51 0-.71zM12.5 14c-.47 0-.92-.18-1.25-.51l-1.42-1.42 2.83-2.83 1.42 1.42c.32.33.51.78.51 1.25s-.18.92-.51 1.25c-.33.33-.78.51-1.25.51z"/>
+         <path d="M9.57 15.84l-1.42-1.42-4.24 4.24c-.2.2-.2.51 0 .71l1.42 1.42c.2.2.51.2.71 0l4.24-4.24c.2-.2.2-.51 0-.71z"/>
     </svg>
 );
 
 const App: React.FC = () => {
-    const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [appStatus, setAppStatus] = useState<AppStatus>('idle');
     const [loadingMessage, setLoadingMessage] = useState<string>('');
-    const [trendingTopics, setTrendingTopics] = useState<string | null>(null);
+    const [analyzedTopics, setAnalyzedTopics] = useState<AnalyzedTopic[]>([]);
+    const [selectedTopicIds, setSelectedTopicIds] = useState<Set<string>>(new Set());
     const [scripts, setScripts] = useState<ViralScript[]>([]);
     const [error, setError] = useState<string | null>(null);
 
     const parseScriptsResponse = (rawText: string): ViralScript[] => {
-        // Split by "故事 X:"/"故事 X：", removing the delimiter. Filter out empty strings from the split.
         const stories = rawText.split(/故事\s?\d+\s*[:：]/).filter(s => s.trim().length > 20);
         
-        // Fallback for when the main splitter fails but the content seems to be there.
         if (stories.length === 0 && rawText.includes('标题')) {
             stories.push(rawText);
         }
 
         return stories.map((storyText, index) => {
-            const cleanStoryText = storyText.replace(/\*\*/g, ''); // Remove markdown bolding
+            const cleanStoryText = storyText.replace(/\*\*/g, '');
 
-            // Regexes are now flexible with colons (： vs :), spacing, and missing subsequent sections (using |$)
             const titleMatch = cleanStoryText.match(/标题\s*[-–—:：]\s*(.*)/);
-            const structureMatch = cleanStoryText.match(/五幕结构\s*[:：]([\s\S]*?)(?:模式 & 结合方法\s*[:：]|脚本大纲\s*[:：]|$)/);
-            const modeMatch = cleanStoryText.match(/模式 & 结合方法\s*[:：]([\s\S]*?)(?:脚本大纲\s*[:：]|$)/);
-            const outlineMatch = cleanStoryText.match(/脚本大纲\s*[:：]([\s\S]*)/);
+            const structureMatch = cleanStoryText.match(/五幕结构\s*[:：]([\s\S]*?)(?:模式 & 结合方法\s*[:：]|视觉大纲\s*[:：]|$)/);
+            const modeMatch = cleanStoryText.match(/模式 & 结合方法\s*[:：]([\s\S]*?)(?:视觉大纲\s*[:：]|$)/);
+            const outlineMatch = cleanStoryText.match(/视觉大纲\s*[:：]([\s\S]*)/);
 
             const cleanContent = (content: string | null | undefined): string => {
                 return content ? content.trim().replace(/^\n+/, '').replace(/\n+$/, '') : '未提供';
@@ -51,36 +53,79 @@ const App: React.FC = () => {
         }).filter(script => script.title !== '无标题' && script.scriptOutline !== '未提供');
     };
 
-    const handleGenerate = useCallback(async () => {
-        setIsLoading(true);
+    const handleFetchTopics = useCallback(async () => {
+        setAppStatus('fetchingTopics');
         setError(null);
         setScripts([]);
-        setTrendingTopics(null);
+        setAnalyzedTopics([]);
 
         try {
             const topics = await fetchTrendingTopics(setLoadingMessage);
-            setTrendingTopics(topics);
-
-            setLoadingMessage('正在整合热点并锻造爆款剧本...');
-            const rawScripts = await generateScriptsFromTopics(topics);
-            
-            const parsedScripts = parseScriptsResponse(rawScripts);
-            if(parsedScripts.length === 0) {
-              throw new Error("AI未能生成有效的剧本。可能是当前热点不适合改编，或返回格式有误。请稍后重试。");
-            }
-            setScripts(parsedScripts);
-
+            setAnalyzedTopics(topics);
+            setSelectedTopicIds(new Set(topics.map(t => t.id))); // Select all by default
+            setAppStatus('topicsReady');
         } catch (err) {
-            if (err instanceof Error) {
-                setError(err.message);
-            } else {
-                setError('发生未知错误');
-            }
+            const errorMessage = err instanceof Error ? err.message : '发生未知错误';
+            setError(errorMessage);
+            setAppStatus('error');
         } finally {
-            setIsLoading(false);
             setLoadingMessage('');
         }
     }, []);
+
+    const handleToggleTopic = (topicId: string) => {
+        setSelectedTopicIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(topicId)) {
+                newSet.delete(topicId);
+            } else {
+                newSet.add(topicId);
+            }
+            return newSet;
+        });
+    };
+
+    const handleGenerateScripts = useCallback(async () => {
+        if (selectedTopicIds.size === 0) {
+            setError("请至少选择一个热点进行创作。");
+            setAppStatus('error');
+            // We want to stay on the topicsReady screen
+            setTimeout(() => {
+                setError(null);
+                setAppStatus('topicsReady');
+            }, 3000);
+            return;
+        }
+
+        setAppStatus('generatingScripts');
+        setError(null);
+        setLoadingMessage('正在整合热点并锻造爆款剧本...');
+
+        try {
+            const selectedTopics = analyzedTopics
+                .filter(t => selectedTopicIds.has(t.id))
+                .map(t => `[${t.category}类热点] ${t.text}`)
+                .join('\n');
+
+            const rawScripts = await generateScriptsFromTopics(selectedTopics);
+            
+            const parsedScripts = parseScriptsResponse(rawScripts);
+            if (parsedScripts.length === 0) {
+                throw new Error("AI未能生成有效的剧本。可能是当前热点不适合改编，或返回格式有误。请稍后重试。");
+            }
+            setScripts(parsedScripts);
+            setAppStatus('scriptsReady');
+
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : '发生未知错误';
+            setError(errorMessage);
+            setAppStatus('error');
+        } finally {
+            setLoadingMessage('');
+        }
+    }, [analyzedTopics, selectedTopicIds]);
+    
+    const isLoading = appStatus === 'fetchingTopics' || appStatus === 'generatingScripts';
 
     return (
         <div className="min-h-screen bg-gray-900 font-sans flex flex-col items-center p-4">
@@ -88,46 +133,67 @@ const App: React.FC = () => {
                 <Header />
 
                 <main className="mt-8">
-                    <div className="flex justify-center">
-                        <button
-                            onClick={handleGenerate}
-                            disabled={isLoading}
-                            className="flex items-center justify-center bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-bold text-xl py-4 px-8 rounded-full shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
-                        >
-                            <RocketIcon className="w-6 h-6 mr-3"/>
-                            {isLoading ? '生成中...' : '一键生成爆款剧本'}
-                        </button>
-                    </div>
+                    {appStatus === 'idle' && (
+                         <div className="flex justify-center">
+                            <button
+                                onClick={handleFetchTopics}
+                                disabled={isLoading}
+                                className="flex items-center justify-center bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-bold text-xl py-4 px-8 rounded-full shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
+                            >
+                                <RocketIcon className="w-6 h-6 mr-3"/>
+                                搜索全球热点
+                            </button>
+                        </div>
+                    )}
 
                     {isLoading && <LoadingSpinner message={loadingMessage} />}
                     
-                    {error && (
+                    {appStatus === 'error' && error && (
                         <div className="mt-8 text-center bg-red-900/50 border border-red-700 text-red-300 p-4 rounded-lg">
                             <p className="font-bold">发生错误</p>
                             <p>{error}</p>
+                            <button onClick={() => setAppStatus('idle')} className="mt-4 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">重试</button>
                         </div>
                     )}
                     
-                    {scripts.length > 0 && !isLoading && (
-                        <div className="mt-12">
-                            {trendingTopics && (
-                                <div className="mb-8 p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
-                                    <h2 className="text-xl font-bold text-gray-200 mb-2">当前分析的热点：</h2>
-                                    <p className="text-gray-300 whitespace-pre-wrap">{trendingTopics}</p>
-                                </div>
-                            )}
+                    {appStatus === 'topicsReady' && (
+                        <div>
+                           <TopicSelector topics={analyzedTopics} selectedIds={selectedTopicIds} onToggle={handleToggleTopic} />
+                           <div className="flex justify-center mt-8">
+                                <button
+                                    onClick={handleGenerateScripts}
+                                    disabled={isLoading || selectedTopicIds.size === 0}
+                                    className="flex items-center justify-center bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-bold text-xl py-4 px-8 rounded-full shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
+                                >
+                                    <RocketIcon className="w-6 h-6 mr-3"/>
+                                    生成爆款剧本
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {appStatus === 'scriptsReady' && scripts.length > 0 && (
+                        <div className="mt-12 animate-fade-in">
                             <div className="grid grid-cols-1 gap-8">
                                 {scripts.map(script => (
                                     <ScriptCard key={script.id} script={script} />
                                 ))}
                             </div>
+                            <div className="text-center mt-12">
+                               <button
+                                    onClick={handleFetchTopics}
+                                    className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-full transition-colors duration-300"
+                                >
+                                    重新搜索热点
+                                </button>
+                            </div>
                         </div>
                     )}
                     
-                    {!isLoading && scripts.length === 0 && !error && (
+                     {appStatus === 'idle' && (
                         <div className="text-center mt-12 p-8 bg-gray-800/30 border border-dashed border-gray-700 rounded-xl">
-                            <h2 className="text-2xl font-semibold text-gray-300">准备好引爆流量了吗？</h2>
-                            <p className="text-gray-400 mt-2">点击按钮，ViralForge AI 将自动搜索当前热点，并为您量身打造三个具有病毒式传播潜力的短视频剧本。</p>
+                            <h2 className="text-2xl font-semibold text-gray-300">准备好引爆全球流量了吗？</h2>
+                            <p className="text-gray-400 mt-2">点击按钮，ViralForge AI 将搜索全球热点，供您选择并创作成无声但有力的视觉故事。</p>
                         </div>
                     )}
                 </main>
