@@ -27,9 +27,14 @@ async function searchTopicByCategory(prompt: string): Promise<string> {
 export async function fetchTrendingTopics(updateLoadingMessage: (message: string) => void): Promise<AnalyzedTopic[]> {
     try {
         const categories = [
-            { id: "funny", name: "搞笑", prompt: "使用中文，在全球范围内的推特/X、YouTube或TikTok上，找出一个近期最热门、最具病毒式传播潜力的搞笑或趣闻轶事。请提供一个简短的一句话摘要。" },
-            { id: "emotional", name: "情感", prompt: "使用中文，在全球范围内的推特/X、YouTube或TikTok上，找出一个近期最热门、最能引发情感共鸣的感人故事。请提供一个简短的一句话摘要。" },
-            { id: "inspirational", name: "励志", prompt: "使用中文，在全球范围内的推特/X、YouTube或TikTok上，找出一个近期最热门的、关于克服困难或励志逆袭的真实故事。请提供一个简短的一句话摘要。" }
+            // Chinese Topics
+            { id: "funny-cn", name: "搞笑 (CN)", prompt: "使用中文，在全球范围内的推特/X、YouTube或TikTok上，找出一个近期最热门、最具病毒式传播潜力的搞笑或趣闻轶事。请提供一个简短的一句话摘要。" },
+            { id: "emotional-cn", name: "情感 (CN)", prompt: "使用中文，在全球范围内的推特/X、YouTube或TikTok上，找出一个近期最热门、最能引发情感共鸣的感人故事。请提供一个简短的一句话摘要。" },
+            { id: "inspirational-cn", name: "励志 (CN)", prompt: "使用中文，在全球范围内的推特/X、YouTube或TikTok上，找出一个近期最热门的、关于克服困难或励志逆袭的真实故事。请提供一个简短的一句话摘要。" },
+            // English Topics
+            { id: "funny-en", name: "Funny (EN)", prompt: "Using English, find a recent, top-trending, and highly viral funny or anecdotal story from Twitter/X, YouTube, or TikTok worldwide. Please provide a brief one-sentence summary." },
+            { id: "emotional-en", name: "Emotional (EN)", prompt: "Using English, find a recent, top-trending, and emotionally resonant touching story from Twitter/X, YouTube, or TikTok worldwide. Please provide a brief one-sentence summary." },
+            { id: "inspirational-en", name: "Inspirational (EN)", prompt: "Using English, find a recent, top-trending, true story about overcoming adversity or an inspirational comeback from Twitter/X, YouTube, or TikTok worldwide. Please provide a brief one-sentence summary." }
         ];
 
         const topicPromises = categories.map(async (category) => {
