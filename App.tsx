@@ -1,18 +1,20 @@
-import React, { useState, useCallback } from 'react';
-import type { ViralScript, AnalyzedTopic } from './types';
+import React, { useState, useCallback, useEffect } from 'react';
+import type { ViralScript, AnalyzedTopic, CustomPrompt } from './types';
 import { fetchTrendingTopics, generateScriptsFromTopics } from './services/geminiService';
+import { getPrompts, savePrompts } from './services/promptService';
 import Header from './components/Header';
 import LoadingSpinner from './components/LoadingSpinner';
 import ScriptCard from './components/ScriptCard';
 import TopicSelector from './components/TopicSelector';
+import PromptManager from './components/PromptManager';
 
 type AppStatus = 'idle' | 'fetchingTopics' | 'topicsReady' | 'generatingScripts' | 'scriptsReady' | 'error';
 
 const RocketIcon: React.FC<{className?: string}> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="currentColor">
-         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
-         <path d="M15.5 12c0-1.09-.43-2.09-1.14-2.83l-1.42-1.42c-.2-.2-.51-.2-.71 0l-4.24 4.24c-.2.2-.2.51 0 .71l1.42 1.42C10.41 15.07 11.41 15.5 12.5 15.5s2.09-.43 2.83-1.14l1.42-1.42c.2-.2.2-.51 0-.71zM12.5 14c-.47 0-.92-.18-1.25-.51l-1.42-1.42 2.83-2.83 1.42 1.42c.32.33.51.78.51 1.25s-.18.92-.51 1.25c-.33.33-.78.51-1.25.51z"/>
-         <path d="M9.57 15.84l-1.42-1.42-4.24 4.24c-.2.2-.2.51 0 .71l1.42 1.42c.2.2.51.2.71 0l4.24-4.24c.2-.2.2-.51 0-.71z"/>
+        <path d="M12.85,3.13a.5.5,0,0,0-.7,0L9.4,5.87a1.5,1.5,0,0,0-.43.83L7.79,10.2a.5.5,0,0,0,.49.6h3.44a.5.5,0,0,0,.49-.6L11,6.7a1.5,1.5,0,0,0-.43-.83ZM10.22,8.3l.57-2.35a.5.5,0,0,1,.14-.28L12,4.56l1.07,1.11a.5.5,0,0,1,.14.28L13.78,8.3Z"/>
+        <path d="M12,12.22a4.49,4.49,0,0,0-4.49,4.49V19.8h9V16.71A4.49,4.49,0,0,0,12,12.22Zm3,6.08H9V16.71a3,3,0,0,1,6,0Z"/>
+        <path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm0,18a8,8,0,1,1,8-8A8,8,0,0,1,12,20Z"/>
     </svg>
 );
 
@@ -23,6 +25,17 @@ const App: React.FC = () => {
     const [selectedTopicIds, setSelectedTopicIds] = useState<Set<string>>(new Set());
     const [scripts, setScripts] = useState<ViralScript[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [prompts, setPrompts] = useState<CustomPrompt[]>([]);
+    const [selectedPromptId, setSelectedPromptId] = useState<string>('');
+    const [isPromptModalOpen, setIsPromptModalOpen] = useState<boolean>(false);
+    
+    useEffect(() => {
+        const loadedPrompts = getPrompts();
+        setPrompts(loadedPrompts);
+        if (loadedPrompts.length > 0) {
+            setSelectedPromptId(loadedPrompts[0].id);
+        }
+    }, []);
 
     const parseScriptsResponse = (rawText: string): ViralScript[] => {
         const stories = rawText.split(/故事\s?\d+\s*[:：]/).filter(s => s.trim().length > 20);
@@ -89,11 +102,17 @@ const App: React.FC = () => {
         if (selectedTopicIds.size === 0) {
             setError("请至少选择一个热点进行创作。");
             setAppStatus('error');
-            // We want to stay on the topicsReady screen
             setTimeout(() => {
                 setError(null);
                 setAppStatus('topicsReady');
             }, 3000);
+            return;
+        }
+
+        const selectedPrompt = prompts.find(p => p.id === selectedPromptId);
+        if (!selectedPrompt) {
+            setError("未能找到选定的提示词模型。");
+            setAppStatus('error');
             return;
         }
 
@@ -107,7 +126,7 @@ const App: React.FC = () => {
                 .map(t => `[${t.category}类热点] ${t.text}`)
                 .join('\n');
 
-            const rawScripts = await generateScriptsFromTopics(selectedTopics);
+            const rawScripts = await generateScriptsFromTopics(selectedTopics, selectedPrompt.content);
             
             const parsedScripts = parseScriptsResponse(rawScripts);
             if (parsedScripts.length === 0) {
@@ -123,14 +142,47 @@ const App: React.FC = () => {
         } finally {
             setLoadingMessage('');
         }
-    }, [analyzedTopics, selectedTopicIds]);
+    }, [analyzedTopics, selectedTopicIds, prompts, selectedPromptId]);
+
+    const handleSavePrompt = (promptToSave: { id?: string; name: string; content: string; }) => {
+        let updatedPrompts: CustomPrompt[];
+        if (promptToSave.id) {
+            updatedPrompts = prompts.map(p => p.id === promptToSave.id ? { ...p, name: promptToSave.name, content: promptToSave.content } : p);
+        } else {
+            const newPrompt: CustomPrompt = {
+                id: `custom-${Date.now()}`,
+                name: promptToSave.name,
+                content: promptToSave.content,
+                isDefault: false,
+            };
+            updatedPrompts = [...prompts, newPrompt];
+        }
+        setPrompts(updatedPrompts);
+        savePrompts(updatedPrompts);
+    };
+
+    const handleDeletePrompt = (promptId: string) => {
+        const promptToDelete = prompts.find(p => p.id === promptId);
+        if (promptToDelete?.isDefault) return;
+
+        const updatedPrompts = prompts.filter(p => p.id !== promptId);
+        setPrompts(updatedPrompts);
+        savePrompts(updatedPrompts);
+        
+        if (selectedPromptId === promptId) {
+            const defaultPrompt = updatedPrompts.find(p => p.isDefault) || updatedPrompts[0];
+            if (defaultPrompt) {
+                setSelectedPromptId(defaultPrompt.id);
+            }
+        }
+    };
     
     const isLoading = appStatus === 'fetchingTopics' || appStatus === 'generatingScripts';
 
     return (
         <div className="min-h-screen bg-gray-900 font-sans flex flex-col items-center p-4">
             <div className="w-full max-w-4xl mx-auto">
-                <Header />
+                <Header onOpenPromptManager={() => setIsPromptModalOpen(true)} />
 
                 <main className="mt-8">
                     {appStatus === 'idle' && (
@@ -159,6 +211,23 @@ const App: React.FC = () => {
                     {appStatus === 'topicsReady' && (
                         <div>
                            <TopicSelector topics={analyzedTopics} selectedIds={selectedTopicIds} onToggle={handleToggleTopic} />
+                           
+                           <div className="mt-8 text-center">
+                                <label htmlFor="prompt-selector" className="block text-lg font-medium text-gray-300 mb-2">第2步：选择生成模型</label>
+                                <select
+                                    id="prompt-selector"
+                                    value={selectedPromptId}
+                                    onChange={(e) => setSelectedPromptId(e.target.value)}
+                                    className="bg-gray-700 border border-gray-600 text-white text-lg rounded-lg focus:ring-orange-500 focus:border-orange-500 block w-full max-w-md mx-auto p-3"
+                                >
+                                    {prompts.map(prompt => (
+                                        <option key={prompt.id} value={prompt.id}>
+                                            {prompt.name}
+                                        </option>
+                                    ))}
+                                </select>
+                           </div>
+
                            <div className="flex justify-center mt-8">
                                 <button
                                     onClick={handleGenerateScripts}
@@ -201,6 +270,13 @@ const App: React.FC = () => {
              <footer className="text-center w-full max-w-4xl mx-auto mt-12 py-6 border-t border-gray-800">
                 <p className="text-gray-500">由 Gemini API 强力驱动</p>
             </footer>
+             <PromptManager
+                isOpen={isPromptModalOpen}
+                onClose={() => setIsPromptModalOpen(false)}
+                prompts={prompts}
+                onSave={handleSavePrompt}
+                onDelete={handleDeletePrompt}
+            />
         </div>
     );
 };

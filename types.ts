@@ -11,3 +11,10 @@ export interface AnalyzedTopic {
   category: string;
   text: string;
 }
+
+export interface CustomPrompt {
+  id: string;
+  name: string;
+  content: string;
+  isDefault?: boolean;
+}

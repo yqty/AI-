@@ -1,5 +1,4 @@
 import { GoogleGenAI } from "@google/genai";
-import { VIRAL_FORGE_AI_PROMPT } from '../constants';
 import type { AnalyzedTopic } from "../types";
 
 if (!process.env.API_KEY) {
@@ -68,13 +67,14 @@ export async function fetchTrendingTopics(updateLoadingMessage: (message: string
     }
 }
 
-export async function generateScriptsFromTopics(topics: string): Promise<string> {
+export async function generateScriptsFromTopics(topics: string, scriptPrompt: string): Promise<string> {
   try {
-    const fullPrompt = `${VIRAL_FORGE_AI_PROMPT}\n\n[热点描述]：${topics}`;
+    const userContent = `[热点描述]：${topics}`;
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: fullPrompt,
+      contents: userContent,
       config: {
+        systemInstruction: scriptPrompt,
         temperature: 0.8,
         topP: 0.95,
       }
