@@ -38,22 +38,27 @@ const App: React.FC = () => {
     }, []);
 
     const parseScriptsResponse = (rawText: string): ViralScript[] => {
-        const stories = rawText.split(/故事\s?\d+\s*[:：]/).filter(s => s.trim().length > 20);
+        const cleanedText = rawText.replace(/^```(?:\w*\n)?([\s\S]*)\n```$/, '$1').trim();
+
+        const stories = cleanedText.split(/(?=故事\s?\d+\s*[:：])/)
+            .map(s => s.trim())
+            .filter(s => s.length > 20);
         
-        if (stories.length === 0 && rawText.includes('标题')) {
-            stories.push(rawText);
+        if (stories.length === 0 && cleanedText.includes('标题')) {
+            stories.push(cleanedText);
         }
 
         return stories.map((storyText, index) => {
-            const cleanStoryText = storyText.replace(/\*\*/g, '');
+            const cleanStoryText = storyText.replace(/\*\*/g, '').replace(/^故事\s?\d+\s*[:：]\s*/, '');
 
             const titleMatch = cleanStoryText.match(/标题\s*[-–—:：]\s*(.*)/);
-            const structureMatch = cleanStoryText.match(/五幕结构\s*[:：]([\s\S]*?)(?:模式 & 结合方法\s*[:：]|视觉大纲\s*[:：]|$)/);
-            const modeMatch = cleanStoryText.match(/模式 & 结合方法\s*[:：]([\s\S]*?)(?:视觉大纲\s*[:：]|$)/);
+            const structureMatch = cleanStoryText.match(/五幕结构\s*[:：]([\s\S]*?)(?=模式\s*&\s*结合方法|视觉大纲|$)/);
+            const modeMatch = cleanStoryText.match(/模式\s*&\s*结合方法\s*[:：]([\s\S]*?)(?=视觉大纲|$)/);
             const outlineMatch = cleanStoryText.match(/视觉大纲\s*[:：]([\s\S]*)/);
 
             const cleanContent = (content: string | null | undefined): string => {
-                return content ? content.trim().replace(/^\n+/, '').replace(/\n+$/, '') : '未提供';
+                if (!content) return '未提供';
+                return content.trim().replace(/^\n+/, '').replace(/\n+$/, '');
             };
 
             return {
@@ -145,20 +150,22 @@ const App: React.FC = () => {
     }, [analyzedTopics, selectedTopicIds, prompts, selectedPromptId]);
 
     const handleSavePrompt = (promptToSave: { id?: string; name: string; content: string; }) => {
-        let updatedPrompts: CustomPrompt[];
-        if (promptToSave.id) {
-            updatedPrompts = prompts.map(p => p.id === promptToSave.id ? { ...p, name: promptToSave.name, content: promptToSave.content } : p);
-        } else {
-            const newPrompt: CustomPrompt = {
-                id: `custom-${Date.now()}`,
-                name: promptToSave.name,
-                content: promptToSave.content,
-                isDefault: false,
-            };
-            updatedPrompts = [...prompts, newPrompt];
-        }
-        setPrompts(updatedPrompts);
-        savePrompts(updatedPrompts);
+        setPrompts(currentPrompts => {
+            let updatedPrompts: CustomPrompt[];
+            if (promptToSave.id) {
+                updatedPrompts = currentPrompts.map(p => p.id === promptToSave.id ? { ...p, name: promptToSave.name, content: promptToSave.content } : p);
+            } else {
+                const newPrompt: CustomPrompt = {
+                    id: `custom-${Date.now()}`,
+                    name: promptToSave.name,
+                    content: promptToSave.content,
+                    isDefault: false,
+                };
+                updatedPrompts = [...currentPrompts, newPrompt];
+            }
+            savePrompts(updatedPrompts);
+            return updatedPrompts;
+        });
     };
 
     const handleDeletePrompt = (promptId: string) => {
